@@ -1,5 +1,7 @@
 #![allow(unused_variables)]
 #![allow(clippy::derivable_impls)]
+use std::collections::HashSet;
+
 use deno_core::{
     v8::{BackingStore, SharedRef},
     CrossIsolateStore, Extension,
@@ -54,7 +56,7 @@ pub mod url;
 #[cfg(feature = "web")]
 pub mod web;
 
-#[cfg(all(not(feature = "web"), feature = "web_stub"))]
+#[cfg(feature = "web_stub")]
 pub mod web_stub;
 
 #[cfg(feature = "io")]
@@ -187,8 +189,80 @@ impl Default for ExtensionOptions {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Ext {
+    BroadcastChannel,
+    Cache,
+    Console,
+    Cron,
+    Crypto,
+    FFI,
+    FS,
+    HTTP,
+    IO,
+    KV,
+    URL,
+    Web,
+    WebIDL,
+    WebGPU,
+    WebSocket,
+    WebStorage,
+    WebStub,
+    // FS import
+    // URL import
+    // TLS,
+    NodeExperimental,
+}
+
+impl Ext {
+    pub fn safe_extensions() -> HashSet<Self> {
+        HashSet::from([Self::WebStub, Self::Console, Self::URL, Self::Crypto])
+    }
+
+    pub fn network_extensions() -> HashSet<Self> {
+        // URL import
+        HashSet::from([
+            Self::Web,
+            Self::WebIDL,
+            Self::WebStorage,
+            Self::WebSocket,
+            Self::HTTP,
+            Self::URL,
+            Self::Crypto,
+            Self::Console,
+            Self::BroadcastChannel,
+        ])
+    }
+
+    pub fn io_extensions() -> HashSet<Self> {
+        // FS import
+        HashSet::from([
+            Self::Web,
+            Self::WebIDL,
+            Self::WebStorage,
+            Self::FS,
+            Self::IO,
+            Self::Cache,
+            Self::Console,
+            Self::FFI,
+            Self::WebGPU,
+            Self::KV,
+            Self::Cron,
+        ])
+    }
+}
+
+macro_rules! ifdo {
+    ($cond:expr, $code:expr) => {
+        if $cond {
+            $code
+        }
+    };
+}
+
 pub(crate) fn all_extensions(
     user_extensions: Vec<Extension>,
+    deno_extensions: HashSet<Ext>,
     options: ExtensionOptions,
     shared_array_buffer_store: Option<CrossIsolateStore<SharedRef<BackingStore>>>,
     is_snapshot: bool,
@@ -196,73 +270,123 @@ pub(crate) fn all_extensions(
     let mut extensions = rustyscript::extensions(is_snapshot);
 
     #[cfg(feature = "webidl")]
-    extensions.extend(webidl::extensions(is_snapshot));
+    ifdo!(
+        deno_extensions.contains(&Ext::WebIDL),
+        extensions.extend(webidl::extensions(is_snapshot))
+    );
 
     #[cfg(feature = "console")]
-    extensions.extend(console::extensions(is_snapshot));
+    ifdo!(
+        deno_extensions.contains(&Ext::Console),
+        extensions.extend(console::extensions(is_snapshot))
+    );
 
     #[cfg(feature = "url")]
-    extensions.extend(url::extensions(is_snapshot));
+    ifdo!(
+        deno_extensions.contains(&Ext::URL),
+        extensions.extend(url::extensions(is_snapshot))
+    );
 
     #[cfg(feature = "web")]
-    extensions.extend(web::extensions(options.web.clone(), is_snapshot));
+    ifdo!(
+        deno_extensions.contains(&Ext::Web),
+        extensions.extend(web::extensions(options.web.clone(), is_snapshot))
+    );
 
     #[cfg(feature = "broadcast_channel")]
-    extensions.extend(broadcast_channel::extensions(
-        options.broadcast_channel.clone(),
-        is_snapshot,
-    ));
+    ifdo!(
+        deno_extensions.contains(&Ext::BroadcastChannel),
+        extensions.extend(broadcast_channel::extensions(
+            options.broadcast_channel.clone(),
+            is_snapshot,
+        ))
+    );
 
     #[cfg(feature = "cache")]
-    extensions.extend(cache::extensions(options.cache.clone(), is_snapshot));
+    ifdo!(
+        deno_extensions.contains(&Ext::Cache),
+        extensions.extend(cache::extensions(options.cache.clone(), is_snapshot))
+    );
 
-    #[cfg(all(not(feature = "web"), feature = "web_stub"))]
-    extensions.extend(web_stub::extensions(is_snapshot));
+    #[cfg(feature = "web_stub")]
+    ifdo!(
+        !deno_extensions.contains(&Ext::Web) && deno_extensions.contains(&Ext::WebStub),
+        extensions.extend(web_stub::extensions(is_snapshot))
+    );
 
     #[cfg(feature = "crypto")]
-    extensions.extend(crypto::extensions(options.crypto_seed, is_snapshot));
+    ifdo!(
+        deno_extensions.contains(&Ext::Crypto),
+        extensions.extend(crypto::extensions(options.crypto_seed, is_snapshot))
+    );
 
     #[cfg(feature = "io")]
-    extensions.extend(io::extensions(options.io_pipes.clone(), is_snapshot));
+    ifdo!(
+        deno_extensions.contains(&Ext::IO),
+        extensions.extend(io::extensions(options.io_pipes.clone(), is_snapshot))
+    );
 
     #[cfg(feature = "webstorage")]
-    extensions.extend(webstorage::extensions(
-        options.webstorage_origin_storage_dir.clone(),
-        is_snapshot,
-    ));
+    ifdo!(
+        deno_extensions.contains(&Ext::WebStorage),
+        extensions.extend(webstorage::extensions(
+            options.webstorage_origin_storage_dir.clone(),
+            is_snapshot,
+        ))
+    );
 
     #[cfg(feature = "websocket")]
-    extensions.extend(websocket::extensions(options.web.clone(), is_snapshot));
+    ifdo!(
+        deno_extensions.contains(&Ext::WebSocket),
+        extensions.extend(websocket::extensions(options.web.clone(), is_snapshot))
+    );
 
     #[cfg(feature = "fs")]
-    extensions.extend(fs::extensions(options.filesystem.clone(), is_snapshot));
+    ifdo!(
+        deno_extensions.contains(&Ext::FS),
+        extensions.extend(fs::extensions(options.filesystem.clone(), is_snapshot))
+    );
 
     #[cfg(feature = "http")]
-    extensions.extend(http::extensions((), is_snapshot));
+    ifdo!(
+        deno_extensions.contains(&Ext::HTTP),
+        extensions.extend(http::extensions((), is_snapshot))
+    );
 
     #[cfg(feature = "ffi")]
-    extensions.extend(ffi::extensions(is_snapshot));
+    ifdo!(
+        deno_extensions.contains(&Ext::FFI),
+        extensions.extend(ffi::extensions(is_snapshot))
+    );
 
     #[cfg(feature = "kv")]
-    extensions.extend(kv::extensions(options.kv_store.clone(), is_snapshot));
+    ifdo!(
+        deno_extensions.contains(&Ext::KV),
+        extensions.extend(kv::extensions(options.kv_store.clone(), is_snapshot))
+    );
 
     #[cfg(feature = "webgpu")]
-    extensions.extend(webgpu::extensions(is_snapshot));
+    ifdo!(
+        deno_extensions.contains(&Ext::WebGPU),
+        extensions.extend(webgpu::extensions(is_snapshot))
+    );
 
     #[cfg(feature = "cron")]
-    extensions.extend(cron::extensions(is_snapshot));
+    ifdo!(
+        deno_extensions.contains(&Ext::Cron),
+        extensions.extend(cron::extensions(is_snapshot))
+    );
 
     #[cfg(feature = "node_experimental")]
-    {
+    ifdo!(deno_extensions.contains(&Ext::NodeExperimental), {
         extensions.extend(napi::extensions(is_snapshot));
         extensions.extend(node::extensions(options.node_resolver.clone(), is_snapshot));
-
         extensions.extend(runtime::extensions(
             &options,
             shared_array_buffer_store,
             is_snapshot,
         ));
-    }
+    });
 
     extensions.extend(user_extensions);
     extensions

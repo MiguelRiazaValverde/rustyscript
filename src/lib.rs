@@ -306,7 +306,7 @@ pub mod module_loader;
 pub mod static_runtime;
 
 mod async_bridge;
-mod ext;
+pub mod ext;
 mod inner_runtime;
 mod module;
 mod module_handle;

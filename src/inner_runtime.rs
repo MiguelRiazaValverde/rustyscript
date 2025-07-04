@@ -1,5 +1,5 @@
 use crate::{
-    ext,
+    ext::{self, Ext},
     module_loader::{LoaderOptions, RustyLoader},
     traits::{ToDefinedValue, ToModuleSpecifier, ToV8String},
     transpiler::transpile,
@@ -116,6 +116,9 @@ pub struct RuntimeOptions {
     /// A set of `deno_core` extensions to add to the runtime
     pub extensions: Vec<deno_core::Extension>,
 
+    /// Use deno extensions
+    pub deno_extensions: HashSet<ext::Ext>,
+
     /// Additional options for the built-in extensions
     pub extension_options: ext::ExtensionOptions,
 
@@ -170,6 +173,7 @@ impl Default for RuntimeOptions {
     fn default() -> Self {
         Self {
             extensions: Vec::default(),
+            deno_extensions: Ext::safe_extensions(),
             default_entrypoint: None,
             timeout: Duration::MAX,
             max_heap_size: None,
@@ -220,6 +224,7 @@ impl<RT: RuntimeTrait> InnerRuntime<RT> {
         let is_snapshot = options.startup_snapshot.is_some();
         let extensions = ext::all_extensions(
             options.extensions,
+            options.deno_extensions,
             options.extension_options,
             options.shared_array_buffer_store.clone(),
             is_snapshot,
